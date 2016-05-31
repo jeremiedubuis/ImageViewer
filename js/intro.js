@@ -1,0 +1,2 @@
+
+var ImageViewer = (function() {

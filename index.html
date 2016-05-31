@@ -1,0 +1,41 @@
+
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>ImageViewer.js</title>
+  <link rel="stylesheet" href="css/image-viewer.css">
+</head>
+<body>
+
+    <div class="image-viewer">
+        <div class="canvas-holder">
+            <canvas></canvas>
+        </div>
+        <div class="controls">
+            <div class="zoom">
+                <div class="slider"><div class="zoomer"></div></div>
+            </div>
+        </div>
+    </div>
+    <script src="js/ImageViewer.build.js"></script>
+    <script type="text/javascript">
+
+        var iv = new ImageViewer("images/1.jpg",{
+            onScale: function(percents) {
+
+            },
+            onLoad: function() {
+                document.getElementsByTagName("canvas")[0].oncontextmenu = function(e) {
+
+                    e.preventDefault();
+                    iv.darken(e.offsetX-50, e.offsetY-50, 100, 100);
+                }
+            }
+
+        });
+
+</script>
+
+</body>
+</html>
