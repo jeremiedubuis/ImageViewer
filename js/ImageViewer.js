@@ -1,10 +1,31 @@
+/**
+ * @desc Creates an image viewer that allows zooming and drag and drop
+ * @required  (helpers) : extend.js
+ */
+
+/**
+ * @param url {string} : the image source file
+ * @param options {object}
+ *      minScale  {int}                   minimum scale of canvas area for the image
+ *      canvas    {node}                  canvas element that will hold the ImageViewer
+ *      dragSmall {bool}                  allows dragging and dropping when image is smaller than canvas
+ *      hasSlider {bool}                  whether the viewer has a zooming range slider
+ *      onLoad    {function [instance] }  callback when image is loaded
+ *      onScale   {function [percents] }  callback for every time the image scales
+ *      sliderOptions {object}
+ *          zoom   {node}                 element that will hold the the RangeSlider
+ *          slider {node}                 element that will scale following zoom
+ */
+
+
 var ImageViewer = function(url, options) {
 
     var _defaults = {
         minScale: 0.7,
+        maxScale: 1.5,
         src: url,
         canvas: document.getElementsByTagName('canvas')[0],
-        dragSmall: false, // allows dragging and dropping when image is smaller than canvas
+        dragSmall: false,
         hasSlider: true,
         sliderOptions: {
             zoom: document.getElementsByClassName("zoom")[0],
@@ -119,7 +140,24 @@ ImageViewer.prototype = {
 
         this.canvas.width = _width;
         this.canvas.height = _height;
+        this.percentageOfOriginal = (this.workspace.width * this.scale) / this.original.width * 100;
 
+    },
+
+    setCenter: function() {
+        this.setCenterAxis('x');
+        this.setCenterAxis('y');
+    },
+
+    setCenterAxis: function(axis) {
+        var _param = axis === "x" ? "width" : "height";
+
+        var workspaceCenter =  this.workspace[_param] * 0.5;
+
+        var offsetCenter = this.offset[axis] - workspaceCenter;
+        var offsetRatio =  offsetCenter / (this.workspace[_param] * this.prevScale / 2);
+
+        this.offset[axis] =  (this.workspace[_param] * this.scale) * offsetRatio / 2 + workspaceCenter;
     },
 
     draw: function() {
@@ -146,13 +184,18 @@ ImageViewer.prototype = {
 
     zoom: function(amount,x,y) {
         //img center vs workspace center
+        this.prevScale = this.scale;
         this.scale = amount;
-        this.setSize();
-        this.offset.x = x || this.offset.x;
-        this.offset.y = y || this.offset.y;
-        this.c2d.clearRect(0,0,this.canvas.width,this.canvas.height);
-        this.clamp(this.offset.x,this.offset.y);
-        this.draw();
+
+        if (this.prevScale !== this.scale) {
+            this.setSize();
+            this.setCenter();
+            this.offset.x = x || this.offset.x;
+            this.offset.y = y || this.offset.y;
+            this.c2d.clearRect(0,0,this.canvas.width,this.canvas.height);
+            this.clamp(this.offset.x,this.offset.y);
+            this.draw();
+        }
     },
 
     clamp: function(x,y) {
@@ -165,31 +208,22 @@ ImageViewer.prototype = {
     clampAxis: function(axis, value) {
 
         value = value ? value : this.offset[axis];
-
         var _param = axis === "x" ? "width" : "height";
-        var _delta = Math.abs(this.workspace[_param] - this.workspace[_param] * this.scale);
 
-        if (this.scale > 1) {
-            value = Math.max( -_delta , Math.min(value, 0) );
-            this.offset[axis] = value;
-        } else {
-            if (this.dragSmall) {
-                value = Math.max( 0 , Math.min(value, _delta) );
-                this.offset[axis] = value;
-            } else {
-                this.offset.x = (this.canvas.width - this.canvas.width*this.scale) *.5;
-                this.offset.y = (this.canvas.height - this.canvas.height*this.scale) *.5;
-            }
-        }
-
+        var _imgSize = this.canvas[_param] * this.scale;
+        var _workSpaceSize = this.workspace[_param];
+        var _maxAxisValue = _imgSize < _workSpaceSize ?  _workSpaceSize - _imgSize : 0;
+        var _minAxisValue =  _imgSize < _workSpaceSize ?  0 : _workSpaceSize - _imgSize;
+        this.offset[axis] = Math.min( _maxAxisValue, Math.max( value, _minAxisValue ) );
 
     },
 
     onPointerDown: function(e) {
         this.dragging = true;
+        console.log(e)
         this.drag = {
-            x: e.offsetX,
-            y: e.offsetY
+            x: e.pageX,
+            y: e.pageY
         };
     },
 
@@ -197,10 +231,10 @@ ImageViewer.prototype = {
         if (this.dragging) {
 
             this.setSize();
-            this.offset.x += e.offsetX - this.drag.x ;
-            this.drag.x = e.offsetX;
-            this.offset.y += e.offsetY - this.drag.y ;
-            this.drag.y = e.offsetY;
+            this.offset.x += e.pageX - this.drag.x ;
+            this.drag.x = e.pageX;
+            this.offset.y += e.pageY - this.drag.y ;
+            this.drag.y = e.pageY;
 
             this.clamp();
 
@@ -222,7 +256,8 @@ ImageViewer.prototype = {
 
         this.slider.onChange = function(percents) {
 
-            _this.zoom(1/100*percents+ _this.minScale )
+            var _range = _this.maxScale - _this.minScale;
+            _this.zoom( _range / 100 * percents + _this.minScale );
             _this.onScale(percents);
         };
     },
