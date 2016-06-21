@@ -204,7 +204,7 @@ ImageViewer.prototype = {
     setEasing: function(easing) {
 
         if (easing) {
-            if (easing.length) return this.easing = easing;
+            if (easing.constructor === Array) return this.easing = easing;
             else if (this.easingFunctions[easing]) return this.easing = this.easingFunctions[easing];
         }
 
@@ -215,7 +215,7 @@ ImageViewer.prototype = {
 
         var totalEasing = 0;
         easing.map(function(easingPerOne) {
-            totalEasing +=easingPerOne;
+            totalEasing += easingPerOne;
         });
 
         var baseFrameValue = duration / totalEasing;
@@ -229,8 +229,8 @@ ImageViewer.prototype = {
     },
 
     easingFunctions: {
-        'ease-in-out': [1,.9,.5,.5,.4,.5,.7,1],
-        'ease-out': [.5,.5,.5,.7,1]
+        'ease-in-out': [1,.9,.5,.5,.4,.5,.3,.2],
+        'ease-out': [.1, .5,.7,1]
     },
 
     animationFrameRate: 20,
