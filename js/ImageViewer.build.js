@@ -178,6 +178,7 @@ var ImageViewer = function(url, options) {
         canvas: document.getElementsByTagName('canvas')[0],
         dragSmall: false,
         hasSlider: true,
+        easing: null,
         sliderOptions: {
             zoom: document.getElementsByClassName("zoom")[0],
             slider: document.getElementsByClassName("zoom")[0].getElementsByClassName("slider")[0]
@@ -210,6 +211,7 @@ ImageViewer.prototype = {
 
         this.load();
         this.addListeners();
+        this.setEasing();
     },
 
     addListeners: function() {
@@ -313,6 +315,8 @@ ImageViewer.prototype = {
 
     draw: function() {
         this.c2d.drawImage(this.img,this.offset.x,this.offset.y, this.canvas.width*this.scale, this.canvas.height*this.scale);
+        var _this = this;
+        this.applyFilterHistory();
 
     },
 
@@ -337,41 +341,137 @@ ImageViewer.prototype = {
         //img center vs workspace center
         this.prevScale = this.scale;
         this.scale = amount;
-
-        if (this.prevScale !== this.scale) {
+        if (this.prevScale !== this.scale || x !== this.offset.x || y !== this.offset.y) {
             this.setSize();
             this.setCenter();
-            this.offset.x = x || this.offset.x;
-            this.offset.y = y || this.offset.y;
+            this.offset.x = typeof x !== 'undefined' ? x : this.offset.x;
+            this.offset.y = typeof y !== 'undefined' ? y : this.offset.y;
             this.c2d.clearRect(0,0,this.canvas.width,this.canvas.height);
             this.clamp(this.offset.x,this.offset.y);
             this.draw();
         }
     },
 
-    clamp: function(x,y) {
+    setEasing: function(easing) {
 
-        this.clampAxis("x", x);
-        this.clampAxis("y", y)
+        if (easing) {
+            if (easing.length) return this.easing = easing;
+            else if (this.easingFunctions[easing]) return this.easing = this.easingFunctions[easing];
+        }
+
+        return this.easing = this.easing || this.easingFunctions['ease-in-out'];
+
+    },
+    prepareEasing: function(duration, easing) {
+
+        var totalEasing = 0;
+        easing.map(function(easingPerOne) {
+            totalEasing +=easingPerOne;
+        });
+
+        var baseFrameValue = duration / totalEasing;
+
+        easing = easing.map(function(v) {
+            return v * baseFrameValue;
+        });
+
+        return easing;
+
+    },
+
+    easingFunctions: {
+        'ease-in-out': [1,.9,.5,.5,.4,.5,.7,1],
+        'ease-out': [.5,.5,.5,.7,1]
+    },
+
+    animationFrameRate: 20,
+    animationTimePerPixel: 4, // ms per pixel
+    animateZoom: function(amount, x, y) {
+
+        this.prevTime = new Date().getTime();
+        x = this.clampAxis("x", x);
+        y = this.clampAxis("y", y);
+
+        var xDistance =  x - this.offset.x;
+        var yDistance = y - this.offset.y;
+
+        var xTime = Math.abs(xDistance) * this.animationTimePerPixel;
+        var yTime = Math.abs(yDistance) * this.animationTimePerPixel;
+        var time = xTime >yTime ? xTime : yTime;
+
+        this.animateSegments(this.prepareEasing(time, this.easing), x, y, time, xDistance, yDistance );
+    },
+
+    animateSegments: function(easing, x , y, time, xDistance, yDistance) {
+        var _this = this;
+        xDistance = xDistance / easing.length;
+        yDistance = yDistance / easing.length;
+
+        var segments = [];
+        easing.forEach(function(segmentEasing) {
+            segments.push({
+                segmentDuration: segmentEasing,
+                xSpeed: xDistance / segmentEasing * _this.animationFrameRate,
+                ySpeed: yDistance / segmentEasing * _this.animationFrameRate,
+            });
+        });
+
+        window.requestAnimationFrame(
+            this.animateFrame.bind(this, x, y, segments, new Date().getTime(), 0)
+        );
+    },
+
+    animateFrame: function( x, y, segments,segmentStartTime, segment ) {
+
+        var time = new Date().getTime();
+        var timeElapsed = time - segmentStartTime;
+        var activeSegment = segments[segment];
+
+        if (time>= this.prevTime+this.animationFrameRate) {
+
+
+            var destX = x > this.offset.x ? Math.min(this.offset.x+activeSegment.xSpeed, x) : Math.max(this.offset.x+activeSegment.xSpeed, x);
+            var destY = y > this.offset.y ? Math.min(this.offset.y+activeSegment.ySpeed, y) : Math.max(this.offset.y+activeSegment.ySpeed, y);
+
+
+            this.zoom(this.scale, destX, destY );
+            this.prevTime = time;
+
+            if (timeElapsed >= activeSegment.segmentDuration && segment < segments.length-1) {
+                segmentStartTime = time;
+                segment++;
+            }
+        }
+
+        if (x !== this.offset.x || y !==this.offset.y) window.requestAnimationFrame(this.animateFrame.bind(this, x, y, segments, segmentStartTime, segment) );
+        else {
+
+            console.log(new Date().getTime())
+        }
+
+    },
+
+    clamp: function(x,y) {
+        this.offset.x = this.clampAxis("x", x);
+        this.offset.y = this.clampAxis("y", y);
 
     },
 
     clampAxis: function(axis, value) {
 
-        value = value ? value : this.offset[axis];
+        value = typeof value !== 'undefined' ? value : this.offset[axis];
         var _param = axis === "x" ? "width" : "height";
 
         var _imgSize = this.canvas[_param] * this.scale;
         var _workSpaceSize = this.workspace[_param];
         var _maxAxisValue = _imgSize < _workSpaceSize ?  _workSpaceSize - _imgSize : 0;
         var _minAxisValue =  _imgSize < _workSpaceSize ?  0 : _workSpaceSize - _imgSize;
-        this.offset[axis] = Math.min( _maxAxisValue, Math.max( value, _minAxisValue ) );
+        return Math.min( _maxAxisValue, Math.max( value, _minAxisValue ) );
 
     },
 
     onPointerDown: function(e) {
         this.dragging = true;
-        console.log(e)
         this.drag = {
             x: e.pageX,
             y: e.pageY
@@ -414,13 +514,96 @@ ImageViewer.prototype = {
     },
 
     destroy: function() {
-            this.canvas.removeEventListener("mousedown", this.fn.onPointerDown, false);
-            this.canvas.removeEventListener("mousemove", this.fn.onPointerMove, false);
-            document.removeEventListener("mouseup", this.fn.onPointerUp, false);
-            this.canvas.removeEventListener("touchstart", this.fn.onPointerDown, false);
-            this.canvas.removeEventListener("touchmove", this.fn.onPointerMove, false);
-            document.removeEventListener("touchend", this.fn.onPointerUp, false);
-            if (this.slider) this.slider.destroy();
+        this.canvas.removeEventListener("mousedown", this.fn.onPointerDown, false);
+        this.canvas.removeEventListener("mousemove", this.fn.onPointerMove, false);
+        document.removeEventListener("mouseup", this.fn.onPointerUp, false);
+        this.canvas.removeEventListener("touchstart", this.fn.onPointerDown, false);
+        this.canvas.removeEventListener("touchmove", this.fn.onPointerMove, false);
+        document.removeEventListener("touchend", this.fn.onPointerUp, false);
+        if (this.slider) this.slider.destroy();
+    },
+
+    getImageLink: function(quality) {
+        return this.canvas.toDataURL('image/jpeg', quality || .7);
+    },
+
+    applyFilter: function(filter, filterArguments, noHistory) {
+
+        if (!filterArguments.length) filterArguments = [filterArguments];
+
+        var imageData = this.c2d.getImageData(0,0, this.canvas.width,this.canvas.height);
+        var historyEntry = {
+            filter: filter,
+            arguments: filterArguments
+        };
+        if (!filterArguments) filterArguments = [];
+        filterArguments.unshift(imageData);
+
+        if (this.filters[filter])
+            var _newData = this.filters[filter].apply(this.filters, filterArguments);
+        else
+            throw new Error('ImageViewer -> Filter doesn\'t exist');
+
+        if (!noHistory) this.filters.history.push(historyEntry);
+        this.c2d.putImageData(_newData,0,0);
+
+    },
+
+    resetFilters: function() {
+        if (this.filters.dataHistory.length)
+            this.c2d.putImageData(this.filters.dataHistory[0],0,0);
+    },
+
+    applyFilterHistory: function() {
+        var _this = this;
+        this.filters.history.forEach(function(entry) {
+            _this.applyFilter(entry.filter, entry.arguments, true);
+        });
+    },
+
+    filters: {
+
+        history: [],
+
+        grayscale: function(imageData) {
+            var data = imageData.data;
+            for (var i=0; i<data.length; i+=4) {
+                var r = data[i];
+                var g = data[i+1];
+                var b = data[i+2];
+                // CIE luminance for the RGB
+                // The human eye is bad at seeing red and blue, so we de-emphasize them.
+                var v = 0.2126*r + 0.7152*g + 0.0722*b;
+                data[i] = data[i+1] = data[i+2] = v;
+            }
+            return imageData;
+        },
+
+        rgb: function(imageData, color, modifier) {
+
+            var colors = {
+                red: 0,
+                green: 1,
+                blue: 2
+            };
+
+            for (var i=0; i<imageData.data.length; i+=4) {
+                imageData.data[ i + colors[color] ] = imageData.data[ i + colors[color] ]+modifier;
+            }
+
+            return imageData;
+        },
+
+        brightness: function(imageData, modifier) {
+            var d = imageData.data;
+            for (var i=0; i<d.length; i+=4) {
+                d[i] += modifier;
+                d[i+1] += modifier;
+                d[i+2] += modifier;
+            }
+            return imageData;
+        }
+
     }
 
 };
