@@ -178,7 +178,7 @@ var ImageViewer = function(url, options) {
         canvas: document.getElementsByTagName('canvas')[0],
         dragSmall: false,
         hasSlider: true,
-        easing: null,
+        easing: 'easeOutCubic',
         sliderOptions: {
             zoom: document.getElementsByClassName("zoom")[0],
             slider: document.getElementsByClassName("zoom")[0].getElementsByClassName("slider")[0]
@@ -211,7 +211,6 @@ ImageViewer.prototype = {
 
         this.load();
         this.addListeners();
-        this.setEasing();
     },
 
     addListeners: function() {
@@ -352,38 +351,6 @@ ImageViewer.prototype = {
         }
     },
 
-    setEasing: function(easing) {
-
-        if (easing) {
-            if (easing.constructor === Array) return this.easing = easing;
-            else if (this.easingFunctions[easing]) return this.easing = this.easingFunctions[easing];
-        }
-
-        return this.easing = this.easing || this.easingFunctions['ease-in-out'];
-
-    },
-    prepareEasing: function(duration, easing) {
-
-        var totalEasing = 0;
-        easing.map(function(easingPerOne) {
-            totalEasing += easingPerOne;
-        });
-
-        var baseFrameValue = duration / totalEasing;
-
-        easing = easing.map(function(v) {
-            return v * baseFrameValue;
-        });
-
-        return easing;
-
-    },
-
-    easingFunctions: {
-        'ease-in-out': [1,.9,.5,.5,.4,.5,.3,.2],
-        'ease-out': [.1, .5,.7,1]
-    },
-
     animationFrameRate: 20,
     animationTimePerPixel: 4, // ms per pixel
     animateZoom: function(amount, x, y) {
@@ -392,6 +359,9 @@ ImageViewer.prototype = {
         x = this.clampAxis("x", x);
         y = this.clampAxis("y", y);
 
+        this.easingFunction = this.easingFunctions[this.easing];
+
+
         var xDistance =  x - this.offset.x;
         var yDistance = y - this.offset.y;
 
@@ -399,56 +369,28 @@ ImageViewer.prototype = {
         var yTime = Math.abs(yDistance) * this.animationTimePerPixel;
         var time = xTime >yTime ? xTime : yTime;
 
-        this.animateSegments(this.prepareEasing(time, this.easing), x, y, time, xDistance, yDistance );
-    },
-
-    animateSegments: function(easing, x , y, time, xDistance, yDistance) {
-        var _this = this;
-        xDistance = xDistance / easing.length;
-        yDistance = yDistance / easing.length;
-
-        var segments = [];
-        easing.forEach(function(segmentEasing) {
-            segments.push({
-                segmentDuration: segmentEasing,
-                xSpeed: xDistance / segmentEasing * _this.animationFrameRate,
-                ySpeed: yDistance / segmentEasing * _this.animationFrameRate,
-            });
-        });
+        var totalIterations = Math.ceil( time / this.animationFrameRate );
 
         window.requestAnimationFrame(
-            this.animateFrame.bind(this, x, y, segments, new Date().getTime(), 0)
+            this.animateFrame.bind( this, this.offset.x, this.offset.y, x, y, xDistance, yDistance,  0, totalIterations )
         );
     },
 
-    animateFrame: function( x, y, segments,segmentStartTime, segment ) {
+    animateFrame: function( startX, startY, x, y, xDistance, yDistance, iteration, totalIterations ) {
 
         var time = new Date().getTime();
-        var timeElapsed = time - segmentStartTime;
-        var activeSegment = segments[segment];
 
         if (time>= this.prevTime+this.animationFrameRate) {
 
-
-            var destX = x > this.offset.x ? Math.min(this.offset.x+activeSegment.xSpeed, x) : Math.max(this.offset.x+activeSegment.xSpeed, x);
-            var destY = y > this.offset.y ? Math.min(this.offset.y+activeSegment.ySpeed, y) : Math.max(this.offset.y+activeSegment.ySpeed, y);
-
-
+            var destX = Math.round( this.easingFunction(iteration, startX, xDistance, totalIterations) );
+            var destY = Math.round( this.easingFunction(iteration, startY, yDistance, totalIterations) );
             this.zoom(this.scale, destX, destY );
             this.prevTime = time;
-
-            if (timeElapsed >= activeSegment.segmentDuration && segment < segments.length-1) {
-                segmentStartTime = time;
-                segment++;
-            }
+            iteration++;
         }
 
-        if (x !== this.offset.x || y !==this.offset.y) window.requestAnimationFrame(this.animateFrame.bind(this, x, y, segments, segmentStartTime, segment) );
-        else {
-
-            console.log(new Date().getTime())
-        }
-
+        if (iteration < totalIterations)
+            window.requestAnimationFrame(this.animateFrame.bind(this,startX, startY, x, y,  xDistance, yDistance, iteration, totalIterations) );
     },
 
     clamp: function(x,y) {
@@ -604,7 +546,110 @@ ImageViewer.prototype = {
             return imageData;
         }
 
+    },
+
+    easingFunctions: {
+        linearTween: function (currentIteration, startValue, changeInValue, totalIterations) {
+            return changeInValue*currentIteration/totalIterations + startValue;
+        },
+        easeOutCubic: function (t, b, c, d) {
+            t /= d;
+            t--;
+            return c*(t*t*t + 1) + b;
+        },
+        easeInQuad: function (currentIteration, startValue, changeInValue, totalIterations) {
+            currentIteration /= totalIterations;
+            return changeInValue*currentIteration*currentIteration + startValue;
+        },
+        easeOutQuad: function (t, b, c, d) {
+            t /= d;
+            return -c * t*(t-2) + b;
+        },
+        easInOutQuad: function (t, b, c, d) {
+            t /= d/2;
+            if (t < 1) return c/2*t*t + b;
+            t--;
+            return -c/2 * (t*(t-2) - 1) + b;
+        },
+        easeInCubic: function (t, b, c, d) {
+            t /= d;
+            return c*t*t*t + b;
+        },
+        easeInOutCubic: function (t, b, c, d) {
+            t /= d/2;
+            if (t < 1) return c/2*t*t*t + b;
+            t -= 2;
+            return c/2*(t*t*t + 2) + b;
+        },
+        easeInQuart: function (t, b, c, d) {
+            t /= d;
+            return c*t*t*t*t + b;
+        },
+        easeOutQuart: function (t, b, c, d) {
+            t /= d;
+            t--;
+            return -c * (t*t*t*t - 1) + b;
+        },
+        easeInOutQuart: function (t, b, c, d) {
+            t /= d/2;
+            if (t < 1) return c/2*t*t*t*t + b;
+            t -= 2;
+            return -c/2 * (t*t*t*t - 2) + b;
+        },
+        easeInQuint: function (t, b, c, d) {
+            t /= d;
+            return c*t*t*t*t*t + b;
+        },
+        easeOutQuint: function (t, b, c, d) {
+            t /= d;
+            t--;
+            return c*(t*t*t*t*t + 1) + b;
+        },
+        easeInOutQuint: function (t, b, c, d) {
+            t /= d/2;
+            if (t < 1) return c/2*t*t*t*t*t + b;
+            t -= 2;
+            return c/2*(t*t*t*t*t + 2) + b;
+        },
+        easeInSine: function (t, b, c, d) {
+            return -c * Math.cos(t/d * (Math.PI/2)) + c + b;
+        },
+        easeOutSine: function (t, b, c, d) {
+            return c * Math.sin(t/d * (Math.PI/2)) + b;
+        },
+        easeInOutSine: function (t, b, c, d) {
+            return -c/2 * (Math.cos(Math.PI*t/d) - 1) + b;
+        },
+        easeInExpo: function (t, b, c, d) {
+            return c * Math.pow( 2, 10 * (t/d - 1) ) + b;
+        },
+        easeOutExpo: function (t, b, c, d) {
+            return c * ( -Math.pow( 2, -10 * t/d ) + 1 ) + b;
+        },
+        easeInOutExpo: function (t, b, c, d) {
+            t /= d/2;
+            if (t < 1) return c/2 * Math.pow( 2, 10 * (t - 1) ) + b;
+            t--;
+            return c/2 * ( -Math.pow( 2, -10 * t) + 2 ) + b;
+        },
+        easeInCirc: function (t, b, c, d) {
+            t /= d;
+            return -c * (Math.sqrt(1 - t*t) - 1) + b;
+        },
+        easeOutCirc: function (t, b, c, d) {
+            t /= d;
+            t--;
+            return c * Math.sqrt(1 - t*t) + b;
+        },
+        easeInOutCirc: function (t, b, c, d) {
+            t /= d/2;
+            if (t < 1) return -c/2 * (Math.sqrt(1 - t*t) - 1) + b;
+            t -= 2;
+            return c/2 * (Math.sqrt(1 - t*t) + 1) + b;
+        }
+
     }
+
 
 };
 
