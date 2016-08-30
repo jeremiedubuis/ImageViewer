@@ -80,8 +80,6 @@ ImageViewer.prototype = {
     load: function() {
 
         var _this = this;
-
-
         this.img.onload = function() { _this._onLoad(_this.img); };
         this.img.src = this.src;
 
@@ -202,8 +200,8 @@ ImageViewer.prototype = {
 
     animationFrameRate: 20,
     animationTimePerPixel: 4, // ms per pixel
+    animationTimePerScale: 1000,
     animateZoom: function(amount, x, y) {
-
         this.prevTime = new Date().getTime();
         x = this.clampAxis("x", x);
         y = this.clampAxis("y", y);
@@ -213,33 +211,33 @@ ImageViewer.prototype = {
 
         var xDistance =  x - this.offset.x;
         var yDistance = y - this.offset.y;
+        var scaleDiff = amount - this.scale ;
 
         var xTime = Math.abs(xDistance) * this.animationTimePerPixel;
         var yTime = Math.abs(yDistance) * this.animationTimePerPixel;
-        var time = xTime >yTime ? xTime : yTime;
-
+        var scaleTime = Math.abs(scaleDiff) * this.animationTimePerScale;
+        var time = Math.max( Math.max(xTime, yTime), scaleTime);
         var totalIterations = Math.ceil( time / this.animationFrameRate );
 
         window.requestAnimationFrame(
-            this.animateFrame.bind( this, this.offset.x, this.offset.y, x, y, xDistance, yDistance,  0, totalIterations )
+            this.animateFrame.bind( this, this.offset.x, this.offset.y, x, y, xDistance, yDistance,this.scale, amount - this.scale,  0, totalIterations )
         );
     },
 
-    animateFrame: function( startX, startY, x, y, xDistance, yDistance, iteration, totalIterations ) {
-
+    animateFrame: function( startX, startY, x, y, xDistance, yDistance, startScale, scaleDiff,  iteration, totalIterations ) {
         var time = new Date().getTime();
-
         if (time>= this.prevTime+this.animationFrameRate) {
 
             var destX = Math.round( this.easingFunction(iteration, startX, xDistance, totalIterations) );
             var destY = Math.round( this.easingFunction(iteration, startY, yDistance, totalIterations) );
-            this.zoom(this.scale, destX, destY );
+            var destScale = this.easingFunction(iteration, startScale, scaleDiff, totalIterations);
+            this.zoom(destScale, destX, destY );
             this.prevTime = time;
             iteration++;
         }
 
         if (iteration < totalIterations)
-            window.requestAnimationFrame(this.animateFrame.bind(this,startX, startY, x, y,  xDistance, yDistance, iteration, totalIterations) );
+            window.requestAnimationFrame(this.animateFrame.bind(this,startX, startY, x, y,  xDistance, yDistance,startScale, scaleDiff, iteration, totalIterations) );
     },
 
     clamp: function(x,y) {
@@ -497,6 +495,10 @@ ImageViewer.prototype = {
             return c/2 * (Math.sqrt(1 - t*t) + 1) + b;
         }
 
+    },
+
+    changeBackgroundColor: function(color) {
+        this.canvas.parentNode.style.backgroundColor = color;
     }
 
 
